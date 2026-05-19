@@ -36,9 +36,9 @@ function ParentContent() {
   const [selectedChild, setSelectedChild] = useState<number | null>(null);
   const [childAttendance, setChildAttendance] = useState<ApiAttendance[]>([]);
   const [loadingAttendance, setLoadingAttendance] = useState(false);
-  const [chatId, setChatId] = useState("");
-  const [linkingStudent, setLinkingStudent] = useState<number | null>(null);
-  const [linking, setLinking] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [linkInfo, setLinkInfo] = useState<{ bot_link: string; bot_message: string; bot_username: string } | null>(null);
+  const [loadingLinkInfo, setLoadingLinkInfo] = useState(false);
 
   useEffect(() => { loadDashboard(); }, []);
 
@@ -69,15 +69,23 @@ function ParentContent() {
     finally { setLoadingAttendance(false); }
   };
 
-  const handleLinkTelegram = async () => {
-    if (!linkingStudent || !chatId) { toast.error("Select a child and enter Chat ID"); return; }
-    setLinking(true);
+  const handleGenerateTelegramLink = async () => {
+    if (!phoneNumber) {
+      toast.error("Enter your phone number to generate the Telegram link.");
+      return;
+    }
+
+    setLoadingLinkInfo(true);
     try {
-      await api.parents.linkTelegram(linkingStudent, chatId);
-      toast.success("Telegram linked! You'll now receive alerts.");
-      setChatId(""); setLinkingStudent(null); loadDashboard();
-    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to link Telegram"); }
-    finally { setLinking(false); }
+      const info = await api.parents.telegramLinkInfo(phoneNumber);
+      setLinkInfo(info);
+      toast.success("Telegram link generated. Open Telegram and follow the instructions.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to generate Telegram link");
+      setLinkInfo(null);
+    } finally {
+      setLoadingLinkInfo(false);
+    }
   };
 
   const getPercentageLabel = (pct: number) => {
@@ -388,7 +396,7 @@ function ParentContent() {
             </div>
             <div>
               <p className="font-bold text-lg">@smartattend_ai_bot</p>
-              <p className="text-sm opacity-80">Search for this bot on Telegram and send <code className="bg-white/20 px-1 rounded">/start</code> to begin linking your account.</p>
+              <p className="text-sm opacity-80">Use the generated link below, or search for this bot on Telegram and send <code className="bg-white/20 px-1 rounded">/start</code> to begin linking your account.</p>
             </div>
           </div>
 
@@ -400,49 +408,50 @@ function ParentContent() {
                   <Bot className="h-5 w-5" />
                 </span>
                 <div>
-                  <h3 className="font-semibold text-gray-900">Link via Chat ID</h3>
-                  <p className="text-xs text-gray-400">Manual linking using Telegram Chat ID</p>
+                  <h3 className="font-semibold text-gray-900">Link using Your Phone Number</h3>
+                  <p className="text-xs text-gray-400">Enter your registered mobile number to generate the Telegram bot link and message.</p>
                 </div>
               </div>
               <div className="space-y-3">
                 <div>
-                  <Label className="text-xs">Select Child</Label>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {children.map((c) => (
-                      <Button
-                        key={c.student.id}
-                        size="sm"
-                        variant={linkingStudent === c.student.id ? "default" : "outline"}
-                        onClick={() => setLinkingStudent(c.student.id)}
-                        className="text-xs h-7"
-                      >
-                        {c.student.first_name}
-                        {c.mapping.telegram_chat_id && <CheckCircle2 className="ml-1 h-3 w-3 text-green-500" />}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="chat-id" className="text-xs">Telegram Chat ID</Label>
+                  <Label htmlFor="phone-number" className="text-xs">Your Phone Number</Label>
                   <Input
-                    id="chat-id"
-                    placeholder="e.g. 123456789"
-                    value={chatId}
-                    onChange={(e) => setChatId(e.target.value)}
+                    id="phone-number"
+                    placeholder="e.g. +919535960697"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
                     className="mt-1 text-sm h-9"
                   />
                   <p className="text-[11px] text-gray-400 mt-1">
-                    Message <code className="bg-gray-100 px-1 rounded">@userinfobot</code> on Telegram to get your Chat ID, or use <code className="bg-gray-100 px-1 rounded">/link &lt;phone&gt;</code> in the bot.
+                    Use the same number registered with the school. This will generate your personal Telegram bot link and connect message.
                   </p>
                 </div>
                 <Button
-                  onClick={handleLinkTelegram}
-                  disabled={linking || !linkingStudent || !chatId}
+                  onClick={handleGenerateTelegramLink}
+                  disabled={loadingLinkInfo || !phoneNumber}
                   className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white gap-2 h-9"
                 >
-                  {linking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-                  {linking ? "Linking…" : "Link Telegram"}
+                  {loadingLinkInfo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+                  {loadingLinkInfo ? "Generating…" : "Generate Telegram Link"}
                 </Button>
+                {linkInfo && (
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-gray-800">
+                    <p className="font-semibold text-gray-900">Send this from your phone:</p>
+                    <p className="mt-3">
+                      <span className="block text-[11px] text-gray-500">Bot link</span>
+                      <a href={linkInfo.bot_link} target="_blank" rel="noreferrer" className="text-indigo-700 underline break-all">
+                        {linkInfo.bot_link}
+                      </a>
+                    </p>
+                    <p className="mt-3">
+                      <span className="block text-[11px] text-gray-500">Message to send</span>
+                      <code className="block rounded bg-white px-2 py-1 text-xs text-indigo-700">{linkInfo.bot_message}</code>
+                    </p>
+                    <p className="mt-3 text-[11px] text-gray-500">
+                      Open the bot link in Telegram and send the above message if needed. The bot will link your account automatically using your phone.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

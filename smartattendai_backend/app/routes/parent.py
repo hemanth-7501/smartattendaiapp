@@ -1,3 +1,5 @@
+import os
+from urllib.parse import quote_plus
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
@@ -143,9 +145,40 @@ def link_telegram():
             }), 200
         else:
             return jsonify({'error': 'Failed to link Telegram account'}), 500
-        
+    
     except Exception as e:
         return jsonify({'error': f'Failed to link Telegram: {str(e)}'}), 500
+
+
+@parent_bp.route('/telegram-link-info', methods=['POST'])
+@jwt_required()
+def get_telegram_link_info():
+    """Generate Telegram bot link and message for the parent using phone number."""
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+
+        if user.role != 'parent':
+            return jsonify({'error': 'Unauthorized'}), 403
+
+        data = request.get_json() or {}
+        phone = data.get('phone') or user.phone
+
+        if not phone or not str(phone).strip():
+            return jsonify({'error': 'phone is required'}), 400
+
+        phone = str(phone).strip()
+        bot_username = os.getenv('TELEGRAM_BOT_USERNAME', 'smartattend_ai_bot')
+        bot_link = f"https://t.me/{bot_username}?start={quote_plus(phone)}"
+        message = f"/link {phone}"
+
+        return jsonify({
+            'bot_username': bot_username,
+            'bot_link': bot_link,
+            'bot_message': message,
+        }), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate Telegram link: {str(e)}'}), 500
 
 
 @parent_bp.route('/link', methods=['POST'])

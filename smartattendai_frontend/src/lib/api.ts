@@ -121,6 +121,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ student_id: studentId, chat_id: chatId }),
       }),
+    telegramLinkInfo: (phone: string) =>
+      apiFetch<{ bot_link: string; bot_message: string; bot_username: string }>('/api/parents/telegram-link-info', {
+        method: 'POST',
+        body: JSON.stringify({ phone }),
+      }),
     link: (parentId: number, studentId: number, opts?: { relationship?: string; is_primary?: boolean }) =>
       apiFetch<{ message: string; mapping?: ApiMapping }>('/api/parents/link', {
         method: 'POST',

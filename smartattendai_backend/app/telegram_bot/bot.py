@@ -174,6 +174,25 @@ def _today_summary(chat_id: str):
 # ─── Handlers ────────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    args = context.args or []
+
+    if args:
+        phone = args[0].strip()
+        if phone:
+            from app import db
+            parent = _get_parent_by_phone(phone)
+            if not parent:
+                parent = _create_mock_parent_and_student(phone)
+
+            count = _link_chat_to_parent(parent.id, chat_id)
+            await update.message.reply_text(
+                "✅ Your Telegram account is linked successfully! You can now ask me about attendance, reports, and your dashboard.",
+                parse_mode="HTML",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return
+
     kb = [[KeyboardButton("📱 Share Phone Number to Login", request_contact=True)]]
     markup = ReplyKeyboardMarkup(kb, one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
