@@ -147,6 +147,50 @@ def link_telegram():
     except Exception as e:
         return jsonify({'error': f'Failed to link Telegram: {str(e)}'}), 500
 
+
+@parent_bp.route('/link', methods=['POST'])
+@jwt_required()
+def hod_link_parent_to_student():
+    """Allow HOD to link a parent user to a student (create ParentStudentMapping)"""
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+
+        if user.role != 'hod':
+            return jsonify({'error': 'Unauthorized. Only HOD can link parents to students'}), 403
+
+        data = request.get_json() or {}
+        parent_id = data.get('parent_id')
+        student_id = data.get('student_id')
+        relationship = data.get('relationship', 'parent')
+        is_primary = bool(data.get('is_primary', False))
+
+        if not parent_id or not student_id:
+            return jsonify({'error': 'parent_id and student_id are required'}), 400
+
+        parent = User.query.get(parent_id)
+        student = Student.query.get(student_id)
+
+        if not parent or parent.role != 'parent':
+            return jsonify({'error': 'Parent user not found or not a parent'}), 404
+        if not student:
+            return jsonify({'error': 'Student not found'}), 404
+
+        # Check existing mapping
+        mapping = ParentStudentMapping.query.filter_by(parent_id=parent_id, student_id=student_id).first()
+        if mapping:
+            return jsonify({'message': 'Mapping already exists', 'mapping': mapping.to_dict()}), 200
+
+        mapping = ParentStudentMapping(parent_id=parent_id, student_id=student_id, relationship=relationship, is_primary=is_primary)
+        db.session.add(mapping)
+        db.session.commit()
+
+        return jsonify({'message': 'Parent linked to student', 'mapping': mapping.to_dict()}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to create mapping: {str(e)}'}), 500
+
 @parent_bp.route('/notifications', methods=['GET'])
 @jwt_required()
 def get_notifications():

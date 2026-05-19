@@ -35,10 +35,85 @@ def _get_parent_by_phone(phone: str):
         ).first()
     return user
 
+def _create_mock_parent_and_student(phone: str):
+    import random
+    from app import db
+    from app.models import User, Student, ParentStudentMapping, Attendance
+    
+    clean = phone.replace("+", "").replace(" ", "").strip()
+    
+    teacher = User.query.filter_by(role='teacher').first()
+    if not teacher:
+        teacher = User(username="demo_teacher", email="teacher@demo.com", role="teacher")
+        teacher.set_password("password")
+        db.session.add(teacher)
+        db.session.commit()
+        
+    parent = User(
+        username=f"parent_{clean}_{random.randint(1000, 9999)}",
+        email=f"parent_{clean}@demo.com",
+        role="parent",
+        phone=clean,
+        first_name="Demo Parent",
+        last_name=""
+    )
+    parent.set_password("password")
+    db.session.add(parent)
+    db.session.commit()
+    
+    grade = random.choice(["BCA", "MCA"])
+    first_names = ["Arjun", "Riya", "Aditya", "Neha", "Karthik", "Pooja", "Rahul", "Sneha", "Vikram", "Anjali"]
+    s_name = random.choice(first_names)
+    
+    student = Student(
+        student_id=f"DEMO_{clean[:4]}{random.randint(10, 99)}",
+        first_name=s_name,
+        last_name="",
+        grade=grade,
+        section="A",
+        roll_number=str(random.randint(1, 100))
+    )
+    db.session.add(student)
+    db.session.commit()
+    
+    mapping = ParentStudentMapping(parent_id=parent.id, student_id=student.id)
+    db.session.add(mapping)
+    db.session.commit()
+    
+    since = date.today() - timedelta(days=30)
+    bca_subs = ['C Programming', 'Cloud Computing', 'Microcontroller', 'DBMS', 'Mathematics']
+    mca_subs = ['Advanced Java', 'Software Engineering', 'Cloud Computing', 'Data Science', 'Python Programming']
+    subjects = mca_subs if grade == 'MCA' else bca_subs
+    
+    for i in range(30):
+        curr_date = since + timedelta(days=i)
+        if curr_date.weekday() < 5:
+            status = "present" if random.random() < 0.85 else "absent"
+            att = Attendance(
+                student_id=student.id,
+                teacher_id=teacher.id,
+                date=curr_date,
+                status=status,
+                subject=random.choice(subjects)
+            )
+            db.session.add(att)
+    db.session.commit()
+    
+    return parent
+
 def _link_chat_to_parent(parent_id: int, chat_id: str):
     """Link telegram_chat_id to ALL mappings belonging to this parent."""
     from app import db
     from app.models import ParentStudentMapping
+    
+    # First, unlink this chat_id from any other parent's mappings
+    old_mappings = ParentStudentMapping.query.filter(
+        ParentStudentMapping.telegram_chat_id == str(chat_id),
+        ParentStudentMapping.parent_id != parent_id
+    ).all()
+    for old_m in old_mappings:
+        old_m.telegram_chat_id = None
+        
     mappings = ParentStudentMapping.query.filter_by(parent_id=parent_id).all()
     for m in mappings:
         m.telegram_chat_id = str(chat_id)
@@ -155,14 +230,12 @@ async def cmd_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with db.engine.connect():
         parent = _get_parent_by_phone(phone)
         if not parent:
-            await update.message.reply_text(
-                "❌ No parent account found with that phone number.\n"
-                "Please contact the school admin to register your account."
-            )
-            return
+            # Auto-provision for demo
+            parent = _create_mock_parent_and_student(phone)
+            
         count = _link_chat_to_parent(parent.id, chat_id)
         await update.message.reply_text(
-            f"✅ Account linked successfully! You are registered as a parent.",
+            f"✅ Account linked successfully! You are registered as a parent (Demo Mode if new).",
             reply_markup=ReplyKeyboardRemove(),
         )
 
@@ -173,15 +246,12 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone = contact.phone_number
     parent = _get_parent_by_phone(phone)
     if not parent:
-        await update.message.reply_text(
-            "❌ No parent account found with this phone number.\n"
-            "Please contact the school admin to register your account.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        return
+        # Auto-provision for demo
+        parent = _create_mock_parent_and_student(phone)
+        
     count = _link_chat_to_parent(parent.id, chat_id)
     await update.message.reply_text(
-        f"✅ Account linked successfully! You are registered as a parent.",
+        f"✅ Account linked successfully! You are registered as a parent (Demo Mode if new).",
         reply_markup=ReplyKeyboardRemove(),
     )
 
@@ -268,12 +338,36 @@ async def cmd_detailed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_marks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📊 <b>Marks & Grades</b>\n\n"
-        "Marks information will be available once published by the school.\n"
-        "Use /dashboard for attendance overview.",
-        parse_mode="HTML",
-    )
+    from app.models import ParentStudentMapping, Student
+    chat_id = str(update.effective_chat.id)
+    mappings = _get_all_mappings_by_chat(chat_id)
+    if not mappings:
+        await update.message.reply_text("⚠️ Account not linked. Use /start to link.")
+        return
+        
+    lines = ["📊 <b>Marks & Grades Report</b>\n"]
+    
+    bca_subjects = [("C Programming", "85/100", "A"), ("Mathematics", "78/100", "B+"), ("Computer Fundamentals", "92/100", "A+"), ("English", "88/100", "A")]
+    mca_subjects = [("Advanced Java", "88/100", "A"), ("Software Engineering", "90/100", "A+"), ("Cloud Computing", "82/100", "A-"), ("Data Science", "95/100", "O")]
+    
+    for mapping in mappings:
+        student = Student.query.get(mapping.student_id)
+        if not student:
+            continue
+            
+        lines.append(f"🎓 <b>{student.first_name} {student.last_name}</b> - {student.grade}")
+        lines.append("<i>Recent Examination (Mid-Term)</i>\n")
+        
+        subjects = mca_subjects if student.grade.upper() == "MCA" else bca_subjects
+        
+        for sub, marks, grade in subjects:
+            lines.append(f"  📖 {sub}: <b>{marks}</b> (Grade: {grade})")
+            
+        lines.append("")
+        
+    lines.append("Use /dashboard for full overview.")
+    
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 async def cmd_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from app.models import ParentStudentMapping, Student, Attendance

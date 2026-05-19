@@ -30,6 +30,11 @@ import {
   Cell,
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard/")({
   component: DashboardIndex,
@@ -186,6 +191,31 @@ function TeacherOverview() {
 function HodOverview() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [parents, setParents] = useState<any[]>([]);
+  const [studentsList, setStudentsList] = useState<ApiStudent[]>([]);
+  const [loadingParents, setLoadingParents] = useState(false);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [parentSearch, setParentSearch] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [selectedParentId, setSelectedParentId] = useState<number | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!linkOpen) return;
+    setLoadingParents(true);
+    setLoadingStudents(true);
+
+    api.users.list({ role: 'parent' })
+      .then((res) => setParents(res.users || []))
+      .catch(() => setParents([]))
+      .finally(() => setLoadingParents(false));
+
+    api.students.list()
+      .then((res) => setStudentsList(res.students || []))
+      .catch(() => setStudentsList([]))
+      .finally(() => setLoadingStudents(false));
+  }, [linkOpen]);
 
   const deptData = [
     { dept: "CSE-A", pct: 93 },
@@ -205,6 +235,105 @@ function HodOverview() {
           Departmental overview and faculty management.
         </p>
       </div>
+
+      <Dialog open={linkOpen} onOpenChange={(v) => setLinkOpen(v)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Link Parent to Student</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Search Parent</label>
+              <Input
+                placeholder="Search parent by name or email"
+                value={parentSearch}
+                onChange={(e) => setParentSearch(e.target.value)}
+                className="mb-3"
+              />
+
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {loadingParents ? (
+                  <Skeleton className="h-10 w-full" />
+                ) : (
+                  parents
+                    .filter(p => {
+                      if (!parentSearch) return true;
+                      const q = parentSearch.toLowerCase();
+                      return `${p.first_name ?? ''} ${p.last_name ?? ''}`.toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
+                    })
+                    .map(p => (
+                      <div
+                        key={p.id}
+                        className={`rounded-md border p-2 cursor-pointer ${selectedParentId === p.id ? 'bg-primary/10 border-primary' : ''}`}
+                        onClick={() => setSelectedParentId(p.id)}
+                      >
+                        <div className="font-semibold text-sm">{p.first_name} {p.last_name}</div>
+                        <div className="text-xs text-muted-foreground">{p.email}</div>
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Select Student</label>
+              <Input
+                placeholder="Search student by name, id or roll"
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                className="mb-3"
+              />
+
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {loadingStudents ? (
+                  <Skeleton className="h-10 w-full" />
+                ) : (
+                  studentsList
+                    .filter(s => {
+                      if (!studentSearch) return true;
+                      const q = studentSearch.toLowerCase();
+                      return `${s.first_name} ${s.last_name}`.toLowerCase().includes(q) || (s.student_id || '').toLowerCase().includes(q) || (s.roll_number || '').toLowerCase().includes(q);
+                    })
+                    .map(s => (
+                      <div
+                        key={s.id}
+                        className={`rounded-md border p-2 cursor-pointer ${selectedStudentId === s.id ? 'bg-primary/10 border-primary' : ''}`}
+                        onClick={() => setSelectedStudentId(s.id)}
+                      >
+                        <div className="font-semibold text-sm">{s.first_name} {s.last_name}</div>
+                        <div className="text-xs text-muted-foreground">{s.grade} {s.section} • {s.student_id}</div>
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <div className="flex items-center justify-end gap-2 w-full">
+              <Button variant="outline" onClick={() => setLinkOpen(false)}>Cancel</Button>
+              <Button
+                onClick={async () => {
+                  if (!selectedParentId || !selectedStudentId) {
+                    toast.error('Select both parent and student');
+                    return;
+                  }
+                  try {
+                    const res = await api.parents.link(selectedParentId, selectedStudentId);
+                    toast.success(res.message || 'Linked successfully');
+                    setLinkOpen(false);
+                  } catch (err: any) {
+                    toast.error(err?.message || String(err));
+                  }
+                }}
+              >
+                Link
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard icon={Users} label="Total Students" value="248" accent="primary" />
@@ -253,7 +382,7 @@ function HodOverview() {
           <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
             <h3 className="font-display text-sm font-semibold mb-3">Quick Actions</h3>
             <button
-              onClick={() => alert("Link Student & Parent feature coming soon!")}
+              onClick={() => setLinkOpen(true)}
               className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-gradient-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-elegant transition hover:opacity-90"
             >
               <LinkIcon className="h-4 w-4" />

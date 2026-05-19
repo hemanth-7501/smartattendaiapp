@@ -121,6 +121,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ student_id: studentId, chat_id: chatId }),
       }),
+    link: (parentId: number, studentId: number, opts?: { relationship?: string; is_primary?: boolean }) =>
+      apiFetch<{ message: string; mapping?: ApiMapping }>('/api/parents/link', {
+        method: 'POST',
+        body: JSON.stringify({ parent_id: parentId, student_id: studentId, ...opts }),
+      }),
     notifications: () =>
       apiFetch<{ notifications: ApiNotification[]; total: number }>('/api/parents/notifications'),
     children: () =>
